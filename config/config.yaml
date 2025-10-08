@@ -51,7 +51,7 @@ weights:
   max_weight: 1.5
 
 model:
-  family: "lgbm"   # opciones: sklearn_gbdt | lgbm
+  family: "sklearn_gbdt"   # opciones: sklearn_gbdt | lgbm
 
   sklearn_gbdt:
     regressor:
@@ -61,16 +61,25 @@ model:
 
   lgbm:
     regressor:
-      n_estimators: 1000
-      learning_rate: 0.05
+      n_estimators: 2000
+      learning_rate: 0.03
       num_leaves: 63
-      subsample: 0.8
-      colsample_bytree: 0.8
+      min_child_samples: 100
+      bagging_fraction: 0.8        # antes: subsample
+      feature_fraction: 0.8        # antes: colsample_bytree
+      bagging_freq: 1
+      reg_alpha: 0.0               # L1
+      reg_lambda: 0.1              # L2
       random_state: 42
+
     classifier:
-      n_estimators: 1000
-      learning_rate: 0.05
+      n_estimators: 2000
+      learning_rate: 0.03
       num_leaves: 63
-      subsample: 0.8
-      colsample_bytree: 0.8
+      min_child_samples: 100
+      bagging_fraction: 0.8
+      feature_fraction: 0.8
+      bagging_freq: 1
+      reg_alpha: 0.0
+      reg_lambda: 0.1
       random_state: 42

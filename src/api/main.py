@@ -7,26 +7,12 @@ from datetime import datetime, timedelta
 import pytz
 from haversine import haversine
 from ..core.config import get_settings
-from ..models.registry_loader import load_models, available_horizons, load_models_for_horizon
+from ..models.registry_loader import available_horizons, load_models_for_horizon
 from pathlib import Path
 import math
 
 app = FastAPI(title="HayBici API", version="1.0.0")
 settings = get_settings()
-
-# Cargamos modelos si existen
-MODELS_READY = (Path("models/registry/regressor.joblib").exists() and
-                Path("models/registry/classifier_calibrated.joblib").exists() and
-                Path("models/registry/meta.joblib").exists())
-if MODELS_READY:
-    REG, CAL, META = load_models()
-    FEATS = META["features"]
-    FEATURES_VERSION = META.get("features", [])
-    FEATURES_VERSION = META.get("features_version", "f1.0.0")
-else:
-    REG = CAL = META = None
-    FEATS = []
-    FEATURES_VERSION = "f0.0.0"
 
 class PredictionItem(BaseModel):
     station_id: str
@@ -72,22 +58,36 @@ def load_current_status():
     df = df.sort_values(["station_id","ts_local"]).groupby("station_id").tail(1).reset_index(drop=True)
     return df
 
-def build_point_features(df: pd.DataFrame, target_ts: datetime) -> pd.DataFrame:
-    # Para demo v1: usamos las columnas ya presentes y rellenamos lags con el último valor disponible (simple).
-    # El pipeline real debería precomputar features minutely en gold.
-    df = df.copy()
-    # Señales de calendario del target
-    hour = target_ts.hour + target_ts.minute/60.0
-    df["hour_sin"] = np.sin(2*np.pi*hour/24.0)
-    df["hour_cos"] = np.cos(2*np.pi*hour/24.0)
-    dow = target_ts.weekday()
+def build_point_features(kdf: pd.DataFrame, target_ts: pd.Timestamp, feat_names: Optional[list] = None) -> pd.DataFrame:
+    """
+    Construye features para predicción en target_ts para las estaciones de kdf.
+    NOTA: Por ahora, si faltan lags/rolling, se crean como 0.0 para que el modelo pueda predecir.
+          (v1 simple; luego leeremos histórico de silver para calcularlos de verdad)
+    """
+    df = kdf.copy()
+
+    # Hora local -> hour_sin/cos y one-hot de día (dow_*)
+    ts = pd.to_datetime(target_ts)
+    hour = ts.hour + ts.minute / 60.0
+    df["hour_sin"] = np.sin(2 * np.pi * hour / 24.0)
+    df["hour_cos"] = np.cos(2 * np.pi * hour / 24.0)
+    dow = ts.weekday()
     for d in range(7):
-        df[f"dow_{d}"] = 1 if d == dow else 0
-    # Placeholders si el modelo espera otros features: los seteamos a NaN y dejamos que scikit los maneje si corresponde
-    for f in FEATS:
-        if f not in df.columns:
-            df[f] = np.nan
+        df[f"dow_{d}"] = 1.0 if d == dow else 0.0
+
+    # capacity puede venir faltante: dejar como está; el modelo tolera 0.0 si reindexeamos luego
+    if "capacity" not in df.columns:
+        df["capacity"] = 0.0
+
+    # Asegurar columnas esperadas por el modelo (si nos las pasan)
+    if feat_names:
+        for f in feat_names:
+            if f not in df.columns:
+                # v1: rellenamos con 0.0 (lags/rolling ausentes)
+                df[f] = 0.0
+
     return df
+
 
 def topk_by_distance(df: pd.DataFrame, lat: float, lon: float, k: int) -> pd.DataFrame:
     def dist(row):
@@ -117,45 +117,50 @@ def predict(
     cfg = settings.yaml_cfg
     if topN is None:
         topN = cfg["api"]["default_topN"]
+
+    # 1) Timestamp objetivo y horizonte
     target_ts, horizon = parse_target_ts(horaLlegada, minutosLlegada)
     if horizon > cfg["time"]["max_horizon_min"]:
         raise HTTPException(422, "Horizonte excede el máximo configurado.")
 
+    # 2) Estado actual (silver) y validaciones mínimas
     state = load_current_status()
-    # Validaciones mínimas
     for col in ["lat", "lon", "num_bikes_available", "station_id"]:
         if col not in state.columns:
             raise HTTPException(503, f"Columna requerida faltante en silver: {col}")
 
-    kdf = topk_by_distance(state, lat, lon, k=topN)
-    feats = build_point_features(kdf, target_ts)
-
+    # 3) Elegir modelo por horizonte entrenado más cercano (ANTES de armar features)
     trained_H = available_horizons()
-    chosen_H = nearest_horizon(horizon, trained_H) if trained_H else horizon  # si no hay modelos, usamos fallback
+    chosen_H = nearest_horizon(horizon, trained_H) if trained_H else horizon
+    family = (cfg.get("model", {}).get("family") or "sklearn_gbdt")
 
-    results = []
     if trained_H:
-        # cargar modelos y features del H elegido
-        REG, CAL, FEATS, FEATURES_VERSION = load_models_for_horizon(chosen_H)
-        model_version = f"m_gbdt_h{chosen_H}"
+        REG, CAL, FEAT_NAMES, FEATURES_VERSION = load_models_for_horizon(chosen_H)
+        model_version = f"m_{'lgbm' if family=='lgbm' else 'gbdt'}_h{chosen_H}"
     else:
         REG = CAL = None
-        FEATS = []
+        FEAT_NAMES = []
         FEATURES_VERSION = "f0.0.0"
         model_version = "m0.0.0"
 
+    # 4) Top-N por distancia y features para ese instante futuro (usando feat_names)
+    kdf = topk_by_distance(state, lat, lon, k=topN)
+    feats = build_point_features(kdf, target_ts, feat_names=FEAT_NAMES)   # ← cambiamos firma
+
+    # 5) Predecir por estación
+    results = []
     for _, row in feats.iterrows():
-        if REG is not None:
-            X = row.reindex(FEATS, fill_value=np.nan).to_frame().T.astype(float)
+        X = row.reindex(FEAT_NAMES, fill_value=0.0).to_frame().T.astype(float) if FEAT_NAMES else None
+
+        if REG is not None and X is not None:
             y_hat = float(REG.predict(X)[0])
-            # CAL puede ser clasificador con predict_proba
             if hasattr(CAL, "predict_proba"):
-                p_av = float(CAL.predict_proba(X)[:,1][0])
+                p_av = float(CAL.predict_proba(X)[:, 1][0])
             else:
-                # fallback si fuera un clasificador sin predict_proba
                 s = CAL.decision_function(X)
                 p_av = float((s - s.min()) / (s.max() - s.min() + 1e-9))
         else:
+            # Fallback sin modelo
             y_hat = float(max(row.get("num_bikes_available", 0.0), 0.0))
             p_av = 1.0 if y_hat >= 1 else 0.0
 
@@ -165,19 +170,20 @@ def predict(
             "y_hat": y_hat,
             "p_availability": p_av,
             "prediction_ts": target_ts.isoformat(),
-            "horizon_min": horizon,             # lo que pidió el user
+            "horizon_min": int(horizon),
             "features_version": FEATURES_VERSION,
-            "model_version": model_version      # indica H del modelo usado
+            "model_version": model_version,
+            # "horizon_model_min": int(chosen_H),
         })
 
-
-    # Ranking ponderado por distancia y probabilidad
+    # 6) Ranking final
     alpha = cfg["ranking"]["alpha_distance"]
     for r in results:
         w_dist = math.exp(-alpha * r["distance_m"])
-        # normalizar y_hat aproximado (capacidad desconocida -> usar 10 como escala blandita)
-        y_norm = min(r["y_hat"]/10.0, 1.0)
-        r["_score"] = 0.5*w_dist + 0.5*max(r["p_availability"], y_norm)
-    results = sorted(results, key=lambda x: x["_score"], reverse=True)
-    for r in results: r.pop("_score", None)
-    return results
+        y_norm = min(r["y_hat"] / 10.0, 1.0)  # normalización blanda
+        r["_score"] = 0.5 * w_dist + 0.5 * max(r["p_availability"], y_norm)
+    results.sort(key=lambda x: x["_score"], reverse=True)
+    for r in results:
+        r.pop("_score", None)
+
+    return results[:topN]

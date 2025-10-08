@@ -1,65 +1,65 @@
 [
   {
     "H": 1,
-    "mae": 0.16139612648985466,
-    "pr_auc": 0.9991004419781889,
-    "family": "lgbm",
+    "mae": 0.13789888958172408,
+    "pr_auc": 0.9992103333376082,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h1"
   },
   {
     "H": 3,
-    "mae": 0.28167287090374016,
-    "pr_auc": 0.9981390496069735,
-    "family": "lgbm",
+    "mae": 0.2452324186700328,
+    "pr_auc": 0.9983857980637186,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h3"
   },
   {
     "H": 5,
-    "mae": 0.388650979344928,
-    "pr_auc": 0.9972042232043702,
-    "family": "lgbm",
+    "mae": 0.3401845097040106,
+    "pr_auc": 0.9977255351080148,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h5"
   },
   {
     "H": 10,
-    "mae": 0.5931210787839024,
-    "pr_auc": 0.9949572439030722,
-    "family": "lgbm",
+    "mae": 0.5364329894752145,
+    "pr_auc": 0.9958966137293241,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h10"
   },
   {
     "H": 15,
-    "mae": 0.7663338229412157,
-    "pr_auc": 0.9926735036400083,
-    "family": "lgbm",
+    "mae": 0.6897034308493009,
+    "pr_auc": 0.9939257935210022,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h15"
   },
   {
     "H": 20,
-    "mae": 0.8989612230599118,
-    "pr_auc": 0.9907441853128225,
-    "family": "lgbm",
+    "mae": 0.8185472826275784,
+    "pr_auc": 0.9925459028836676,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h20"
   },
   {
     "H": 30,
-    "mae": 1.1290807724221552,
-    "pr_auc": 0.9876554918099961,
-    "family": "lgbm",
+    "mae": 1.019815781609518,
+    "pr_auc": 0.9896829973479484,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h30"
   },
   {
     "H": 60,
-    "mae": 1.5910883870141939,
-    "pr_auc": 0.9800117639084854,
-    "family": "lgbm",
+    "mae": 1.447791528771467,
+    "pr_auc": 0.9827816725593831,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h60"
   },
   {
     "H": 120,
-    "mae": 2.2220144968994977,
-    "pr_auc": 0.9681585026695598,
-    "family": "lgbm",
+    "mae": 2.0450440756554165,
+    "pr_auc": 0.9715748081703803,
+    "family": "sklearn_gbdt",
     "model_dir": "models\\registry\\h120"
   }
 ]

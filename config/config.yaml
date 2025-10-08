@@ -1,0 +1,76 @@
+﻿project_name: "HayBici?"
+
+data:
+  lake_mode: "filesystem"  # "filesystem" | "minio"
+  base_path: "./data"      # usado si lake_mode=filesystem
+  bucket: "haybici"        # usado si lake_mode=minio
+  layers:
+    bronze: "bronze"
+    silver: "silver"
+    gold: "gold"
+
+retention_days:
+  bronze: 365
+  silver: 365
+  gold: 365
+
+time:
+  local_tz: "America/Argentina/Buenos_Aires"
+  resolution_min: 1
+  max_horizon_min: 120
+  #horizons_min: [1, 3, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120]
+  horizons_min: [1, 3, 5, 10, 15, 20, 30, 60, 120] # para testear
+
+
+features:
+  lags_min: [1, 5, 10, 15, 30]
+  rolling_windows_min: [5, 15, 30]
+  add_weekly_seasonality: true
+  add_hourly_cyclical: true
+
+ranking:
+  alpha_distance: 0.001
+  topN_default: 3
+
+training:
+  target_reg: "num_bikes_available"
+  target_cls_threshold: 1  # bikes>0
+  test_days: 1             # días más recientes para test
+  class_weight: "balanced" # para la clasificación
+
+api:
+  default_topN: 3
+
+weights:
+  noise_threshold: 0.5         # bicis
+  cap_by_capacity: true # Cap por capacidad: no permitir dep_estimada > capacity
+  # 3) Outliers imposibles: descartar saltos demasiado grandes en 1 minuto
+  max_delta_per_min: 30        # bicis/min
+  # Normalización final de pesos por hora
+  min_weight: 0.5
+  max_weight: 1.5
+
+model:
+  family: "lgbm"   # opciones: sklearn_gbdt | lgbm
+
+  sklearn_gbdt:
+    regressor:
+      random_state: 42
+    classifier:
+      random_state: 42
+
+  lgbm:
+    regressor:
+      n_estimators: 1000
+      learning_rate: 0.05
+      num_leaves: 63
+      subsample: 0.8
+      colsample_bytree: 0.8
+      random_state: 42
+    classifier:
+      n_estimators: 1000
+      learning_rate: 0.05
+      num_leaves: 63
+      subsample: 0.8
+      colsample_bytree: 0.8
+      random_state: 42
